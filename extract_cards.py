@@ -1,74 +1,65 @@
 import fitz  # PyMuPDF
 import os
-import math
 
 PDF_FILE = 'flattened.pdf'
 OUTPUT_DIR = 'cards_output'
 MM_PER_PT = 25.4 / 72
 MARGIN_MM = 2
-MARGIN_PT = MARGIN_MM / MM_PER_PT
-
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-def rect_distance(r1, r2):
-    # Distance between two rectangles (0 if they overlap)
-    if r1.intersects(r2):
-        return 0
-    dx = max(r1.x0 - r2.x1, r2.x0 - r1.x1, 0)
-    dy = max(r1.y0 - r2.y1, r2.y0 - r1.y1, 0)
-    return math.hypot(dx, dy)
+def mm2pt(mm):
+    return mm / MM_PER_PT
 
-def cluster_blocks(blocks, threshold=30):
-    # Simple agglomerative clustering by bbox distance (in pt)
-    clusters = []
-    for rect in blocks:
-        added = False
-        for cluster in clusters:
-            if any(rect_distance(rect, r) < threshold for r in cluster):
-                cluster.append(rect)
-                added = True
-                break
-        if not added:
-            clusters.append([rect])
-    return clusters
+def pt2mm(pt):
+    return pt * MM_PER_PT
+
+# Landscape A4 size in mm
+A4_WIDTH_MM = 297
+A4_HEIGHT_MM = 210
+# Card grid
+CARDS_X = 4
+CARDS_Y = 2
+PADDING_X_MM = 10
+PADDING_Y_MM = 10
+GAP_X_MM = 5
+GAP_Y_MM = 5
+CARD_WIDTH_MM = (A4_WIDTH_MM - 2*PADDING_X_MM - (CARDS_X-1)*GAP_X_MM) / CARDS_X
+CARD_HEIGHT_MM = (A4_HEIGHT_MM - 2*PADDING_Y_MM - (CARDS_Y-1)*GAP_Y_MM) / CARDS_Y
+
+print(f"Landscape A4: {A4_WIDTH_MM} x {A4_HEIGHT_MM} mm")
+print(f"Card size: {CARD_WIDTH_MM:.2f} x {CARD_HEIGHT_MM:.2f} mm (plus 2mm margin each side)")
 
 with fitz.open(PDF_FILE) as doc:
-    page = doc[0]
-    blocks = page.get_text("blocks")
-    print("All block types and content:")
-    for i, b in enumerate(blocks):
-        print(f"Block {i}: type={b[4]!r}, bbox=({b[0]:.2f}, {b[1]:.2f}, {b[2]:.2f}, {b[3]:.2f})")
-        if len(b) > 5:
-            print(f"  Content: {str(b[5])[:60]!r}")
-    # Use all blocks for clustering
-    text_rects = [fitz.Rect(b[0], b[1], b[2], b[3]) for b in blocks]
-    clusters = cluster_blocks(text_rects, threshold=40)  # 40pt ~ 14mm
-    print(f"Detected {len(clusters)} card clusters.")
-
-    for idx, cluster in enumerate(clusters, 1):
-        # Bounding box for the card
-        min_x = min(r.x0 for r in cluster)
-        min_y = min(r.y0 for r in cluster)
-        max_x = max(r.x1 for r in cluster)
-        max_y = max(r.y1 for r in cluster)
-        card_rect = fitz.Rect(min_x, min_y, max_x, max_y)
-        # Add margin
-        card_rect.x0 = max(0, card_rect.x0 - MARGIN_PT)
-        card_rect.y0 = max(0, card_rect.y0 - MARGIN_PT)
-        card_rect.x1 = min(page.rect.width, card_rect.x1 + MARGIN_PT)
-        card_rect.y1 = min(page.rect.height, card_rect.y1 + MARGIN_PT)
-
-        # Create new PDF with cropped page
-        new_doc = fitz.open()
-        new_page = new_doc.new_page(width=card_rect.width, height=card_rect.height)
-        # Show the cropped area from the original page
-        new_page.show_pdf_page(
-            fitz.Rect(0, 0, card_rect.width, card_rect.height),
-            doc,
-            0,
-            clip=card_rect
-        )
-        out_path = os.path.join(OUTPUT_DIR, f"card_{idx}.pdf")
-        new_doc.save(out_path, garbage=4, deflate=True)
-        new_doc.close()
-        print(f"Saved {out_path}") 
+    for page_idx, page in enumerate(doc):
+        is_front = (page_idx % 2 == 0)  # 0-based: 0,2=front; 1,3=back
+        for row in range(CARDS_Y):
+            for col in range(CARDS_X):
+                x0_mm = PADDING_X_MM + col * (CARD_WIDTH_MM + GAP_X_MM)
+                y0_mm = PADDING_Y_MM + row * (CARD_HEIGHT_MM + GAP_Y_MM)
+                x1_mm = x0_mm + CARD_WIDTH_MM
+                y1_mm = y0_mm + CARD_HEIGHT_MM
+                # Add margin and clamp to page bounds
+                x0_mm_margin = max(0, x0_mm - MARGIN_MM)
+                y0_mm_margin = max(0, y0_mm - MARGIN_MM)
+                x1_mm_margin = min(A4_WIDTH_MM, x1_mm + MARGIN_MM)
+                y1_mm_margin = min(A4_HEIGHT_MM, y1_mm + MARGIN_MM)
+                if x1_mm_margin <= x0_mm_margin or y1_mm_margin <= y0_mm_margin:
+                    continue
+                rect = fitz.Rect(
+                    mm2pt(x0_mm_margin), mm2pt(y0_mm_margin),
+                    mm2pt(x1_mm_margin), mm2pt(y1_mm_margin)
+                )
+                idx = row * CARDS_X + col + 1
+                if is_front:
+                    out_path = os.path.join(OUTPUT_DIR, f"front_card_{page_idx//2+1}_{idx}.pdf")
+                else:
+                    out_path = os.path.join(OUTPUT_DIR, f"back_card_{page_idx//2+1}_{idx}.pdf")
+                new_doc = fitz.open()
+                new_page = new_doc.new_page(width=rect.width, height=rect.height)
+                new_page.show_pdf_page(
+                    fitz.Rect(0, 0, rect.width, rect.height),
+                    doc, page_idx, clip=rect
+                )
+                new_doc.save(out_path, garbage=4, deflate=True)
+                new_doc.close()
+                print(f"Saved {out_path}") 
