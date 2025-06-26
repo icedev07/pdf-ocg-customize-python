@@ -5,7 +5,7 @@ PDFNet.Initialize("demo:1750962399989:61d2e25d030000000084e44e30437ec5289b7b2318
 
 # === 2. Open the input PDF ===
 input_pdf = "input.pdf"
-output_pdf = "disabled_layer.pdf"
+output_pdf = "flattened.pdf"
 
 doc = PDFDoc(input_pdf)
 doc.InitSecurityHandler()
