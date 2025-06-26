@@ -10,6 +10,8 @@ output_pdf = "disabled_layer.pdf"
 doc = PDFDoc(input_pdf)
 doc.InitSecurityHandler()
 
+default_config = doc.GetOCGConfig()
+ctx = Context(default_config)
 # === 3. Find all OCGs ===
 ocgs_obj = doc.GetOCGs()
 ocgs = []
@@ -22,10 +24,11 @@ if not ocgs:
     exit()
 
 # === 4. Create new OCG configuration (layer settings) ===
-default_config = doc.GetOCGConfig()
 config = Config.Create(doc, True)
+
 on_array = doc.GetSDFDoc().CreateIndirectArray()
 off_array = doc.GetSDFDoc().CreateIndirectArray()
+
 
 # === 5. Enable/Disable layers ===
 for ocg in ocgs:
@@ -38,9 +41,11 @@ for ocg in ocgs:
         print(f"Enabling layer: {name}")
         on_array.PushBack(ocg.GetSDFObj())
     else:
-        # For other layers, keep them ON by default (or you can modify this logic)
-        print(f"Keeping layer: {name} (default state)")
-        on_array.PushBack(ocg.GetSDFObj())
+        if ctx.GetState(ocg):
+            on_array.PushBack(ocg.GetSDFObj())
+        else:
+            off_array.PushBack(ocg.GetSDFObj())
+
 
 config.SetName("Hide RUS Layer")
 config.SetInitOnStates(on_array)
