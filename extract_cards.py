@@ -37,38 +37,43 @@ unique_back_hashes = set()
 unique_back_count = 0
 
 with fitz.open(PDF_FILE) as doc:
-    # Identify RU layer xref
-    ocgs = doc.get_ocgs()
-    ru_xref = None
-    eng_xref = None
-    if ocgs:
-        for xref, info in ocgs.items():
-            name = info.get('name', '').strip().upper()
-            if name in ('RU', 'RUS', 'RUSSIAN'):
-                ru_xref = xref
-                break
-            elif name in ('EN', 'ENG', 'ENGLISH'):
-                eng_xref = xref
-                break
-    if ru_xref is None:
-        print("Warning: RU layer not found. All layers will be ON.")
+    # Identify RU and EN layer xrefs
+    # ocgs = doc.get_ocgs()
+    # ru_xref = None
+    # eng_xref = None
+    # if ocgs:
+    #     for xref, info in ocgs.items():
+    #         name = info.get('name', '').strip().upper()
+    #         if name in ('RU', 'RUS', 'RUSSIAN'):
+    #             ru_xref = xref
+    #         elif name in ('EN', 'ENG', 'ENGLISH'):
+    #             eng_xref = xref
+    
+    # print(f"Found RU layer: {ru_xref}")
+    # print(f"Found EN layer: {eng_xref}")
+    
+    # # Prepare ON/OFF lists for OCGs - turn ON English, turn OFF Russian
+    # on_list = []
+    # off_list = []
+    # if ocgs:
+    #     for xref, info in ocgs.items():
+    #         if xref == eng_xref:
+    #             on_list.append(xref)
+    #         elif xref == ru_xref:
+    #             off_list.append(xref)
+    #         else:
+    #             # For other layers, keep their default state
+    #             if info.get('on', False):
+    #                 on_list.append(xref)
+    #             else:
+    #                 off_list.append(xref)
 
-    print(ru_xref)
-    # Prepare ON/OFF lists for OCGs
-    on_list = []
-    off_list = []
-    if ocgs:
-        for xref, info in ocgs.items():
-            if xref == ru_xref:
-                off_list.append(xref)
-            elif xref == eng_xref:
-                on_list.append(xref)
-            elif info.get('on', False):
-                on_list.append(xref)
-            else:
-                off_list.append(xref)
+    # print(f"Layers to turn ON: {on_list}")
+    # print(f"Layers to turn OFF: {off_list}")
 
-    doc.set_layer(-1, on=on_list, off=off_list)
+    # # Apply layer configuration to the source document
+    # if ocgs:
+    #     doc.set_layer(-1, on=on_list, off=off_list)
 
     for page_idx, page in enumerate(doc):
         is_front = (page_idx % 2 == 0)  # 0,2=front; 1,3=back
@@ -93,6 +98,7 @@ with fitz.open(PDF_FILE) as doc:
                     idx = row * CARDS_X + col + 1
                     out_path = os.path.join(OUTPUT_DIR, f"front_card_{page_idx//2+1}_{idx}.pdf")
                
+                    # Create new document and copy content with layer settings already applied
                     new_doc = fitz.open()
                     new_page = new_doc.new_page(width=rect.width, height=rect.height)
                     new_page.show_pdf_page(
@@ -117,11 +123,11 @@ with fitz.open(PDF_FILE) as doc:
                 mm2pt(x1_mm), mm2pt(y1_mm)
             )
             out_path = os.path.join(OUTPUT_DIR, f"back_grid_{page_idx//2+1}.pdf")
-            # Set OCG visibility for this crop
-            if ocgs and ru_xref is not None:
-                doc.set_layer(-1, on=on_list, off=off_list)
+            
+            # Create new document and copy content with layer settings already applied
             new_doc = fitz.open()
             new_page = new_doc.new_page(width=rect.width, height=rect.height)
+            
             new_page.show_pdf_page(
                 fitz.Rect(0, 0, rect.width, rect.height),
                 doc, page_idx, clip=rect
