@@ -17,80 +17,67 @@ def pt2mm(pt):
 def pdf_bytes_hash(pdf_bytes):
     return hashlib.md5(pdf_bytes).hexdigest()
 
-# Landscape A4 size in mm
-A4_WIDTH_MM = 297
-A4_HEIGHT_MM = 210
+# Content margins (from analyze_layout.py analysis)
+CONTENT_LEFT_MARGIN_MM = 14.6
+CONTENT_TOP_MARGIN_MM = 14.5
+
 # Card grid: 4 columns x 2 rows (portrait cards)
 CARDS_X = 4
 CARDS_Y = 2
-PADDING_X_MM = 10
-PADDING_Y_MM = 10
 GAP_X_MM = 5
 GAP_Y_MM = 5
-CARD_WIDTH_MM = (A4_WIDTH_MM - 2*PADDING_X_MM - (CARDS_X-1)*GAP_X_MM) / CARDS_X
-CARD_HEIGHT_MM = (A4_HEIGHT_MM - 2*PADDING_Y_MM - (CARDS_Y-1)*GAP_Y_MM) / CARDS_Y
 
-print(f"Landscape A4: {A4_WIDTH_MM} x {A4_HEIGHT_MM} mm")
-print(f"Card size: {CARD_WIDTH_MM:.2f} x {CARD_HEIGHT_MM:.2f} mm (plus 2mm margin each side)")
+print(f"Processing PDF: {PDF_FILE}")
+print(f"Content margins: Left={CONTENT_LEFT_MARGIN_MM}mm, Top={CONTENT_TOP_MARGIN_MM}mm")
 
 unique_back_hashes = set()
 unique_back_count = 0
 
 with fitz.open(PDF_FILE) as doc:
-    # Identify RU and EN layer xrefs
-    # ocgs = doc.get_ocgs()
-    # ru_xref = None
-    # eng_xref = None
-    # if ocgs:
-    #     for xref, info in ocgs.items():
-    #         name = info.get('name', '').strip().upper()
-    #         if name in ('RU', 'RUS', 'RUSSIAN'):
-    #             ru_xref = xref
-    #         elif name in ('EN', 'ENG', 'ENGLISH'):
-    #             eng_xref = xref
     
-    # print(f"Found RU layer: {ru_xref}")
-    # print(f"Found EN layer: {eng_xref}")
-    
-    # # Prepare ON/OFF lists for OCGs - turn ON English, turn OFF Russian
-    # on_list = []
-    # off_list = []
-    # if ocgs:
-    #     for xref, info in ocgs.items():
-    #         if xref == eng_xref:
-    #             on_list.append(xref)
-    #         elif xref == ru_xref:
-    #             off_list.append(xref)
-    #         else:
-    #             # For other layers, keep their default state
-    #             if info.get('on', False):
-    #                 on_list.append(xref)
-    #             else:
-    #                 off_list.append(xref)
-
-    # print(f"Layers to turn ON: {on_list}")
-    # print(f"Layers to turn OFF: {off_list}")
-
-    # # Apply layer configuration to the source document
-    # if ocgs:
-    #     doc.set_layer(-1, on=on_list, off=off_list)
-
     for page_idx, page in enumerate(doc):
+        # Get actual page dimensions
+        mediabox = page.rect
+        page_width_mm = pt2mm(mediabox.width)
+        page_height_mm = pt2mm(mediabox.height)
+        
+        # Calculate content area based on fixed margins
+        content_x0_mm = CONTENT_LEFT_MARGIN_MM
+        content_y0_mm = CONTENT_TOP_MARGIN_MM
+        content_x1_mm = page_width_mm - CONTENT_LEFT_MARGIN_MM  # Symmetric right margin
+        content_y1_mm = page_height_mm - CONTENT_TOP_MARGIN_MM  # Symmetric bottom margin
+        
+        # Calculate available content area for cards
+        content_width_mm = content_x1_mm - content_x0_mm
+        content_height_mm = content_y1_mm - content_y0_mm
+        
+        # Calculate card dimensions based on available content area
+        card_width_mm = (content_width_mm - (CARDS_X-1)*GAP_X_MM) / CARDS_X
+        card_height_mm = (content_height_mm - (CARDS_Y-1)*GAP_Y_MM) / CARDS_Y
+        
+        print(f"Page {page_idx + 1}: {page_width_mm:.1f} x {page_height_mm:.1f} mm")
+        print(f"  Content area: {content_width_mm:.1f} x {content_height_mm:.1f} mm")
+        print(f"  Card size: {card_width_mm:.2f} x {card_height_mm:.2f} mm (plus 2mm margin each side)")
+        
         is_front = (page_idx % 2 == 0)  # 0,2=front; 1,3=back
         if is_front:
             for row in range(CARDS_Y):
                 for col in range(CARDS_X):
-                    x0_mm = PADDING_X_MM + col * (CARD_WIDTH_MM + GAP_X_MM)
-                    y0_mm = PADDING_Y_MM + row * (CARD_HEIGHT_MM + GAP_Y_MM)
-                    x1_mm = x0_mm + CARD_WIDTH_MM
-                    y1_mm = y0_mm + CARD_HEIGHT_MM
+                    # Calculate card position relative to content area
+                    x0_mm = content_x0_mm + col * (card_width_mm + GAP_X_MM)
+                    y0_mm = content_y0_mm + row * (card_height_mm + GAP_Y_MM)
+                    x1_mm = x0_mm + card_width_mm
+                    y1_mm = y0_mm + card_height_mm
+                    
                     # Add margin and clamp to page bounds
                     x0_mm_margin = max(0, x0_mm - MARGIN_MM)
                     y0_mm_margin = max(0, y0_mm - MARGIN_MM)
-                    x1_mm_margin = min(A4_WIDTH_MM, x1_mm + MARGIN_MM)
-                    y1_mm_margin = min(A4_HEIGHT_MM, y1_mm + MARGIN_MM)
+                    x1_mm_margin = min(page_width_mm, x1_mm + MARGIN_MM)
+                    y1_mm_margin = min(page_height_mm, y1_mm + MARGIN_MM)
+                    
                     if x1_mm_margin <= x0_mm_margin or y1_mm_margin <= y0_mm_margin:
                         continue
+                        
                     rect = fitz.Rect(
                         mm2pt(x0_mm_margin), mm2pt(y0_mm_margin),
                         mm2pt(x1_mm_margin), mm2pt(y1_mm_margin)
@@ -107,17 +94,20 @@ with fitz.open(PDF_FILE) as doc:
                     )
                     new_doc.save(out_path, garbage=4, deflate=True)
                     new_doc.close()
-                    print(f"Saved {out_path}")
+                    print(f"  Saved {out_path}")
         else:
             # For back, extract one rectangle covering the entire card grid (with margin)
-            x0_mm = PADDING_X_MM - MARGIN_MM
-            y0_mm = PADDING_Y_MM - MARGIN_MM
-            x1_mm = PADDING_X_MM + CARDS_X * CARD_WIDTH_MM + (CARDS_X-1) * GAP_X_MM + MARGIN_MM
-            y1_mm = PADDING_Y_MM + CARDS_Y * CARD_HEIGHT_MM + (CARDS_Y-1) * GAP_Y_MM + MARGIN_MM
+            x0_mm = content_x0_mm - MARGIN_MM
+            y0_mm = content_y0_mm - MARGIN_MM
+            x1_mm = content_x0_mm + CARDS_X * card_width_mm + (CARDS_X-1) * GAP_X_MM + MARGIN_MM
+            y1_mm = content_y0_mm + CARDS_Y * card_height_mm + (CARDS_Y-1) * GAP_Y_MM + MARGIN_MM
+            
+            # Clamp to page bounds
             x0_mm = max(0, x0_mm)
             y0_mm = max(0, y0_mm)
-            x1_mm = min(A4_WIDTH_MM, x1_mm)
-            y1_mm = min(A4_HEIGHT_MM, y1_mm)
+            x1_mm = min(page_width_mm, x1_mm)
+            y1_mm = min(page_height_mm, y1_mm)
+            
             rect = fitz.Rect(
                 mm2pt(x0_mm), mm2pt(y0_mm),
                 mm2pt(x1_mm), mm2pt(y1_mm)
@@ -134,4 +124,4 @@ with fitz.open(PDF_FILE) as doc:
             )
             new_doc.save(out_path, garbage=4, deflate=True)
             new_doc.close()
-            print(f"Saved {out_path}") 
+            print(f"  Saved {out_path}") 
