@@ -99,8 +99,11 @@ with fitz.open(PDF_FILE) as doc:
             # For back, extract one rectangle covering the entire card grid (with margin)
             x0_mm = content_x0_mm - MARGIN_MM
             y0_mm = content_y0_mm - MARGIN_MM
-            x1_mm = content_x0_mm + CARDS_X * card_width_mm + (CARDS_X-1) * GAP_X_MM + MARGIN_MM
-            y1_mm = content_y0_mm + CARDS_Y * card_height_mm + (CARDS_Y-1) * GAP_Y_MM + MARGIN_MM
+            # x1_mm = content_x0_mm + CARDS_X * card_width_mm + (CARDS_X-1) * GAP_X_MM + MARGIN_MM
+            # y1_mm = content_y0_mm + CARDS_Y * card_height_mm + (CARDS_Y-1) * GAP_Y_MM + MARGIN_MM
+
+            x1_mm = content_x0_mm + card_width_mm 
+            y1_mm = content_y0_mm + card_height_mm
             
             # Clamp to page bounds
             x0_mm = max(0, x0_mm)
